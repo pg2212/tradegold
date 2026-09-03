@@ -1,0 +1,22 @@
+# Core numerics
+numpy>=1.26,<3
+pandas>=2.2,<3
+pyarrow>=16.0
+
+# Market data
+yfinance>=0.2.40
+
+# Modelling
+scikit-learn>=1.5
+xgboost>=2.1
+
+# Config & validation
+pydantic>=2.7,<3
+PyYAML>=6.0
+
+# Reporting
+matplotlib>=3.8
+
+# Dashboard
+streamlit>=1.40
+plotly>=5.22
