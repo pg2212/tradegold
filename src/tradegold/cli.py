@@ -209,11 +209,19 @@ def _cmd_prune(args: argparse.Namespace) -> int:
 
 
 def _cmd_registry(_: argparse.Namespace) -> int:
+    from typing import get_args
+
+    from .config import ExecutionConfig
     from .data import PROVIDERS
 
+    def options(field: str) -> str:
+        """Read the choices off the annotation so this listing cannot go stale."""
+        return ", ".join(get_args(ExecutionConfig.model_fields[field].annotation))
+
     print(f"{'data providers':20s}: {', '.join(PROVIDERS.names())}")
-    print(f"{'execution stops':20s}: setup_extreme, atr")
-    print(f"{'execution targets':20s}: setup_extreme, r_multiple")
+    print(f"{'execution stops':20s}: {options('stop')}")
+    print(f"{'execution targets':20s}: {options('target')}")
+    print(f"{'entry fills':20s}: {options('entry_fill')}")
     return 0
 
 

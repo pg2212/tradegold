@@ -69,3 +69,18 @@ def test_defaults_are_the_faithful_port():
     assert cfg.strategy.volume_multiplier == 1.5   # code, not the volMA90 comment
     assert cfg.strategy.long_retracement == 0.40
     assert cfg.strategy.short_retracement == 0.60  # asymmetry preserved
+
+
+def test_registry_listing_enumerates_every_execution_mode():
+    """The CLI listing is derived from the annotations, so it cannot go stale."""
+    from typing import get_args
+
+    from tradegold.config import ExecutionConfig
+
+    stops = get_args(ExecutionConfig.model_fields["stop"].annotation)
+    targets = get_args(ExecutionConfig.model_fields["target"].annotation)
+    fills = get_args(ExecutionConfig.model_fields["entry_fill"].annotation)
+
+    assert {"setup_extreme", "prev_candle", "swing", "atr"} == set(stops)
+    assert {"setup_extreme", "prev_candle", "r_multiple"} == set(targets)
+    assert {"next_open", "level", "close"} == set(fills)
