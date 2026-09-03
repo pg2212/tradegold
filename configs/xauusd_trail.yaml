@@ -1,0 +1,17 @@
+# Best real variant: the stop tracks the last completed 60m candle, ratcheting
+# in the trade's favour only. Cuts the full-year loss from -$90 to -$19/oz and
+# halves max drawdown -- still a loss, and still fails the H1/H2 split.
+run:
+  name: xauusd_trail
+data:
+  provider: csv
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+execution:
+  stop: prev_candle
+  target: setup_extreme
+  cost_per_side: 0.15
+  slippage_per_side: 0.05

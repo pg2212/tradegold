@@ -1,0 +1,24 @@
+# XAUUSD spot, full year 2025, from a local 15-minute file.
+#
+# Entries trigger on 15m bars; the 60m setup context is resampled from the same
+# file, so both timeframes are guaranteed to agree about every candle.
+#
+#   tradegold run -b configs/default.yaml -c configs/xauusd_2025.yaml
+
+run:
+  name: xauusd_2025
+
+data:
+  provider: csv
+  # The csv provider treats `ticker` as a path; {interval} is substituted, which
+  # is unused here because the context is resampled rather than loaded.
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+
+execution:
+  # Spot XAUUSD trades on a tighter spread than the futures contract.
+  cost_per_side: 0.15
+  slippage_per_side: 0.05

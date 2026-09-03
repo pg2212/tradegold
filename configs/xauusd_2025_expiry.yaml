@@ -1,0 +1,20 @@
+# Same data, but setups expire if their pullback has not arrived within a few
+# context candles. The unlimited-wait behaviour of the original is what lets a
+# setup fire hours later with price already through its level.
+run:
+  name: xauusd_2025_expiry
+
+data:
+  provider: csv
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+
+strategy:
+  setup_expiry_bars: 4        # 4 hours to get its pullback, then discard
+
+execution:
+  cost_per_side: 0.15
+  slippage_per_side: 0.05

@@ -1,0 +1,41 @@
+# GC futures, full year 2025, on a $100,000 account.
+#
+# GC is 100 oz per contract, so one contract risking $18/oz risks $1,800 --
+# already 1.8% of a $100k account. At 1% risk the account cannot afford a single
+# full-size contract, so this uses micro gold (MGC, 10 oz) instead.
+#
+# The series is unadjusted continuous: five contract rolls in 2025 leave price
+# gaps totalling $186/oz, so positions are closed before each roll rather than
+# booking a move that never happened.
+run:
+  name: gc_100k
+data:
+  provider: csv
+  ticker: "data/raw/GC_continuous_15m_2025_unadjusted.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  roll_column: roll_flag
+  use_cache: false
+strategy:
+  swing_left: 3
+  swing_right: 3
+  allowed_hours: [0,1,2,3,4,5,6,7,8,9,10,11,16,17,18,19,20,21,22,23]
+execution:
+  stop: swing
+  swing_buffer: 0.05
+  target: r_multiple
+  r_multiple: 2.0
+  min_reward_risk: 1.5
+  max_holding_bars: 96
+  # Futures: ~$0.10/oz commission plus a tick of slippage.
+  cost_per_side: 0.10
+  slippage_per_side: 0.05
+capital:
+  enabled: true
+  initial: 100000
+  risk_per_trade_pct: 1.0
+  contract_size: 10        # MGC micro gold
+  lot_step: 1
+  compound: true
+  max_leverage: 20

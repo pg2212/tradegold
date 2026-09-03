@@ -1,0 +1,58 @@
+# GOLD STRATEGY -- volume-expansion setups with a retracement entry.
+#
+# Setups are defined on completed 60-minute candles; entries trigger on 5-minute
+# bars when price pulls back into the setup's retracement level.
+#
+# Override anything without editing this file:
+#   tradegold run --set strategy.volume_multiplier=3.0
+#   tradegold run --set execution.target=r_multiple --set execution.r_multiple=2.0
+
+run:
+  name: gold_strategy
+  output_dir: runs
+  log_level: INFO
+
+data:
+  provider: yfinance
+  ticker: "GC=F"
+  # yfinance caps intraday history: 7d for 1m, 60d for 2m-90m, 730d for 60m.
+  # The 5m entry timeframe is therefore the binding constraint on backtest length.
+  entry_interval: "5m"
+  entry_period: "60d"
+  context_interval: "60m"
+  context_period: "730d"
+  cache_dir: data/raw
+  use_cache: true
+  refresh: false
+
+strategy:
+  ema_fast: 10                # Pine emaCLen1
+  ema_slow: 20                # Pine emaCLen2
+  ema_trend: 50               # Pine emaCLen3
+  volume_ma_period: 30
+  # Pine tests volumeC > volMA45, where volMA45 = SMA(volume,30) * 1.5.
+  # Set to 3.0 for the volMA90 gate the source comment describes.
+  volume_multiplier: 1.5
+  long_retracement: 0.40      # fill at high - 0.40 * range
+  short_retracement: 0.60     # fill at high - 0.60 * range (= low + 0.40 * range)
+  require_pullback: true      # skip when the prior 3 candles already ran one way
+  setup_expiry_bars: 0        # 0 = a setup waits indefinitely, as in the original
+  allow_long: true
+  allow_short: true
+
+execution:
+  # The source is an indicator and names no exit. These levels are what its own
+  # plots imply: stop at the far side of the setup candle, target at the near
+  # side -- about 0.67R, so it needs a >60% hit rate.
+  stop: setup_extreme         # setup_extreme | atr
+  target: setup_extreme       # setup_extreme | r_multiple
+  r_multiple: 1.5
+  atr_period: 14
+  atr_stop_multiplier: 1.5
+  max_holding_bars: 0         # 0 = hold until stop or target
+  cost_per_side: 0.25         # $/oz -> $0.50 round trip
+  slippage_per_side: 0.0
+
+report:
+  plot: true
+  plot_bars: 600

@@ -1,0 +1,28 @@
+# Strategy v2: structural stop, geometry filter.
+#
+# The stop moves off the setup candle's range and onto the last CONFIRMED swing
+# low (long) / high (short) on the entry timeframe. That breaks the fixed 0.67:1
+# geometry, because risk is now set by market structure rather than by the width
+# of one candle. The target becomes a multiple of that risk, and any trade whose
+# geometry does not clear `min_reward_risk` is declined outright.
+run:
+  name: xauusd_swing
+data:
+  provider: csv
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+strategy:
+  swing_left: 3
+  swing_right: 3
+execution:
+  stop: swing
+  swing_buffer: 0.05
+  target: r_multiple
+  r_multiple: 2.0
+  min_reward_risk: 1.5
+  max_holding_bars: 96
+  cost_per_side: 0.15
+  slippage_per_side: 0.05
