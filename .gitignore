@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+venv/
+.env
+
+# Data & run artifacts (regenerable)
+data/
+runs/
+*.csv
+!tests/fixtures/*.csv
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

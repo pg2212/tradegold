@@ -1,0 +1,9 @@
+# Keeps the setup-extreme stop but takes profit at a fixed multiple of risk,
+# turning the geometry from ~0.67R into a positive-expectancy shape.
+run:
+  name: r_target
+execution:
+  stop: setup_extreme
+  target: r_multiple
+  r_multiple: 1.5
+  max_holding_bars: 288       # one trading day of 5m bars

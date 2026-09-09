@@ -1,0 +1,19 @@
+# Trailing stop plus the deeper 0.55 entry. The two best individual changes
+# combined land at roughly break-even over the year -- included so the "best
+# case" is visible on the charts rather than only in a table.
+run:
+  name: xauusd_trail_deep
+data:
+  provider: csv
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+strategy:
+  long_retracement: 0.55
+  short_retracement: 0.45
+execution:
+  stop: prev_candle
+  cost_per_side: 0.15
+  slippage_per_side: 0.05

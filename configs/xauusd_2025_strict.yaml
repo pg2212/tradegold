@@ -1,0 +1,16 @@
+# The volume gate the source comment describes (3x) rather than the 1.5x its
+# code applies, on the full-year data.
+run:
+  name: xauusd_2025_strict
+data:
+  provider: csv
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+strategy:
+  volume_multiplier: 3.0
+execution:
+  cost_per_side: 0.15
+  slippage_per_side: 0.05

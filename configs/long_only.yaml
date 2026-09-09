@@ -1,0 +1,5 @@
+# Longs only -- gold's two-year trend has been strongly upward.
+run:
+  name: long_only
+strategy:
+  allow_short: false

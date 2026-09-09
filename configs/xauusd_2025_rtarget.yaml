@@ -1,0 +1,19 @@
+# Same data, but the exit geometry is changed rather than the entry rules.
+# The setup-extreme exits pay ~0.65:1, which needs a >60% hit rate. A fixed
+# multiple of risk inverts that requirement.
+run:
+  name: xauusd_2025_rtarget
+data:
+  provider: csv
+  ticker: "data/raw/XAUUSD_spot_bid_15m_2025.csv"
+  entry_interval: "15m"
+  context_interval: "60m"
+  context_source: resample
+  use_cache: false
+execution:
+  stop: setup_extreme
+  target: r_multiple
+  r_multiple: 2.0
+  max_holding_bars: 96          # one trading day of 15m bars
+  cost_per_side: 0.15
+  slippage_per_side: 0.05

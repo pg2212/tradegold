@@ -1,0 +1,6 @@
+# The volume gate the source *comment* describes (volMA90 = 3x the average)
+# rather than the one its code applies. Far fewer, more selective setups.
+run:
+  name: strict_volume
+strategy:
+  volume_multiplier: 3.0
