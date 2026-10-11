@@ -1,25 +1,10 @@
-"""GOLD STRATEGY: volume-expansion setups with a retracement entry.
+"""Hourly EMA-band filter and 5-minute EMA pullback BUY strategy.
 
-A faithful port of the TradingView indicator. The shape of it:
-
-1.  On the higher timeframe, a *setup* candle is one that closed with volume
-    well above its own recent average, in the direction of its trend EMA, and
-    which is not merely the fourth leg of a move already three candles old.
-2.  That candle's range defines three levels: its extremes, and a retracement
-    level inside it.
-3.  On the lower timeframe the strategy then waits, possibly for hours, for
-    price to pull back into that retracement level. Touching it is the entry.
-4.  A setup is consumed by its trigger, or replaced by an opposite setup. It is
-    never re-armed.
-
-Two faithfulness notes, both of which change results if "corrected":
-
-  * The source comment claims the volume gate is `volMA90` (3x the average) but
-    the code tests `volMA45` (1.5x). The code is what ran, so the code is what
-    is ported; `strategy.volume_multiplier` exposes it.
-  * Longs retrace 40% down from the setup high, shorts 60% down from it
-    (= 40% up from the low). The asymmetry is in the original and is preserved
-    as two separate settings rather than silently symmetrised.
+The lower-timeframe sequence is causal: EMA10 crosses above EMA50-high while
+EMA10 is above EMA20; a later candle touches EMA10; another candle clears it
+with its low above EMA10; price breaks that candle's high; and the following
+five candles may fill the 40%-from-high retracement. The old setup detector is
+retained as a diagnostic helper, but is no longer used to generate trades.
 """
 
 from __future__ import annotations
@@ -39,6 +24,7 @@ LONG, SHORT, FLAT = 1, -1, 0
 CONTEXT_COLUMNS = [
     "openC", "highC", "lowC", "closeC", "volumeC", "efficiency", "atr_pctile",
     "ema_fast", "ema_slow", "ema_trend", "vol_ma", "vol_threshold",
+    "ema50_high", "ema50_low", "hourly_regime",
     "prev_close_1", "bull_1", "bull_2", "bull_3",
     "bull_setup", "bear_setup",
     "setup_high", "setup_low", "setup_trigger", "setup_dir",
@@ -85,6 +71,20 @@ def build_context(bars: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
     out["ema_fast"] = close.ewm(span=cfg.ema_fast, adjust=False, min_periods=cfg.ema_fast).mean()
     out["ema_slow"] = close.ewm(span=cfg.ema_slow, adjust=False, min_periods=cfg.ema_slow).mean()
     out["ema_trend"] = close.ewm(span=cfg.ema_trend, adjust=False, min_periods=cfg.ema_trend).mean()
+    out["ema50_high"] = bars["High"].ewm(
+        span=cfg.ema_trend, adjust=False, min_periods=cfg.ema_trend
+    ).mean()
+    out["ema50_low"] = bars["Low"].ewm(
+        span=cfg.ema_trend, adjust=False, min_periods=cfg.ema_trend
+    ).mean()
+    out["hourly_regime"] = np.select(
+        [
+            (out["ema_fast"] >= out["ema50_high"]) & (out["ema_fast"] > out["ema_slow"]),
+            out["ema_fast"] < out["ema50_low"],
+        ],
+        ["buy", "sell"],
+        default="no_trade",
+    )
 
     # Efficiency ratio: how much of the distance travelled became net progress.
     net = (close - close.shift(cfg.regime_lookback)).abs()
@@ -345,9 +345,134 @@ def run_strategy(
     entry_bars: pd.DataFrame, context_bars: pd.DataFrame, cfg: StrategyConfig,
     *, context_interval: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Full strategy pass. Returns (signals on entry bars, context frame)."""
+    """Run the hourly-filtered, 5-minute EMA pullback BUY strategy.
+
+    Hourly EMA10 must be above the EMA50-high channel and EMA20. On the entry
+    timeframe, EMA10 must cross above EMA50-high while above EMA20; price then
+    has to touch EMA10, clear it with a candle whose low is above EMA10, break
+    that candle's high, and retrace 40% of its range within five bars.
+    """
     from .data import align_context
 
+    # Keep legacy diagnostic columns in the context artifact for existing
+    # dashboard readers; only _generate_buy_signals creates trade entries.
     context = detect_setups(build_context(context_bars, cfg), cfg)
     aligned = align_context(entry_bars, context[CONTEXT_COLUMNS], context_interval)
-    return generate_signals(aligned, cfg), context
+    return _generate_buy_signals(aligned, cfg), context
+
+
+def _generate_buy_signals(aligned: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
+    """Apply the ordered EMA-touch, clearance, breakout, and retracement rules."""
+    out = aligned.copy()
+    close = out["Close"]
+    fast = close.ewm(span=cfg.ema_fast, adjust=False, min_periods=cfg.ema_fast).mean()
+    slow = close.ewm(span=cfg.ema_slow, adjust=False, min_periods=cfg.ema_slow).mean()
+    ema50_high = out["High"].ewm(
+        span=cfg.ema_trend, adjust=False, min_periods=cfg.ema_trend
+    ).mean()
+    ema50_low = out["Low"].ewm(
+        span=cfg.ema_trend, adjust=False, min_periods=cfg.ema_trend
+    ).mean()
+    return _buy_signal_state_machine(
+        out, cfg, fast, slow, ema50_high, ema50_low
+    )
+
+
+def _buy_signal_state_machine(
+    aligned: pd.DataFrame,
+    cfg: StrategyConfig,
+    fast: pd.Series,
+    slow: pd.Series,
+    ema50_high: pd.Series,
+    ema50_low: pd.Series,
+) -> pd.DataFrame:
+    """Run long setup stages over aligned bars and their precomputed EMAs."""
+    out = aligned.copy()
+    out["ema_fast_5m"] = fast
+    out["ema_slow_5m"] = slow
+    out["ema50_high_5m"] = ema50_high
+    out["ema50_low_5m"] = ema50_low
+
+    local_up = (fast > slow) & (fast >= ema50_high)
+    cross_up = (fast > ema50_high) & (fast.shift(1) <= ema50_high.shift(1))
+    hourly_up = out["hourly_regime"].eq("buy")
+    eligible = hourly_up & local_up & cfg.allow_long
+
+    n = len(out)
+    signal = np.zeros(n, dtype=int)
+    active_high = np.full(n, np.nan)
+    active_low = np.full(n, np.nan)
+    active_trigger = np.full(n, np.nan)
+    active_dir = np.zeros(n, dtype=int)
+    setup_age = np.full(n, np.nan)
+    setup_time = out["context_open_time"].to_numpy()
+    high = out["High"].to_numpy(float)
+    low = out["Low"].to_numpy(float)
+    ema10 = fast.to_numpy(float)
+    eligible_values = eligible.fillna(False).to_numpy(bool)
+    cross_values = cross_up.fillna(False).to_numpy(bool)
+
+    # Stages: 0 wait for EMA10/EMA50-high cross; 1 wait for candle/EMA10 touch;
+    # 2 wait for a full clearance candle; 3 wait for its high to break;
+    # 4 wait for the 40% pullback (maximum five future candles).
+    stage = 0
+    touched_at = -1
+    clearance_high = clearance_low = trigger = np.nan
+    pending_age = 0
+
+    for i in range(n):
+        if not eligible_values[i]:
+            stage = 0
+            continue
+
+        if stage == 0:
+            if cross_values[i]:
+                stage = 1
+                touched_at = i
+            continue
+
+        if stage == 1:
+            if i > touched_at and low[i] <= ema10[i] <= high[i]:
+                stage = 2
+            continue
+
+        if stage == 2:
+            if low[i] > ema10[i]:
+                clearance_high, clearance_low = high[i], low[i]
+                stage = 3
+            continue
+
+        if stage == 3:
+            if high[i] > clearance_high:
+                trigger = clearance_high - (clearance_high - clearance_low) * cfg.long_retracement
+                pending_age = 0
+                stage = 4
+            continue
+
+        # The breakout has closed; only subsequent bars can fill the limit.
+        pending_age += 1
+        active_dir[i] = LONG
+        active_high[i] = clearance_high
+        active_low[i] = clearance_low
+        active_trigger[i] = trigger
+        setup_age[i] = pending_age
+        if low[i] <= trigger:
+            signal[i] = LONG
+            stage = 0  # consumed
+        elif pending_age >= cfg.retracement_expiry_bars:
+            stage = 0  # stale retracement: discard rather than chase
+
+    out["signal"] = signal
+    out["active_dir"] = active_dir
+    out["active_high"] = active_high
+    out["active_low"] = active_low
+    out["active_trigger"] = active_trigger
+    out["setup_age"] = setup_age
+    out["trigger_immediate"] = False
+    out["setup_time"] = setup_time
+    out["setup_dir"] = np.where(signal == LONG, LONG, FLAT)
+    out["setup_high"] = active_high
+    out["setup_low"] = active_low
+    out["setup_trigger"] = active_trigger
+    logger.info("5-minute EMA pullback strategy: %d BUY triggers", int((signal == LONG).sum()))
+    return out

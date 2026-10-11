@@ -11,6 +11,7 @@ from tradegold.config import StrategyConfig
 from tradegold.strategy import (
     LONG,
     SHORT,
+    _buy_signal_state_machine,
     build_context,
     detect_setups,
     generate_signals,
@@ -57,6 +58,80 @@ def test_prev_close_1_is_the_candle_before_the_setup_candle():
     pd.testing.assert_series_equal(
         ctx["prev_close_1"], closes.shift(1), check_names=False
     )
+
+
+def test_hourly_ema50_channel_uses_highs_and_lows():
+    frame = bars(rising_market(30))
+    out = build_context(frame, cfg())
+    pd.testing.assert_series_equal(
+        out["ema50_high"],
+        frame["High"].ewm(span=5, adjust=False, min_periods=5).mean(),
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        out["ema50_low"],
+        frame["Low"].ewm(span=5, adjust=False, min_periods=5).mean(),
+        check_names=False,
+    )
+
+
+def _pullback_frame(n: int = 12):
+    idx = pd.date_range("2026-01-01", periods=n, freq="5min", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "Open": 102.0, "High": 104.0, "Low": 102.0, "Close": 103.0,
+            "Volume": 1.0, "hourly_regime": "buy",
+            "context_open_time": pd.Timestamp("2026-01-01", tz="UTC"),
+        },
+        index=idx,
+    )
+    # Index 1 crosses EMA50-high; 2 touches EMA10; 3 clears it; 4 breaks
+    # the clearance high. The 40% retracement is 103.8.
+    frame.iloc[0, frame.columns.get_loc("Low")] = 98.0
+    frame.iloc[0, frame.columns.get_loc("High")] = 100.0
+    frame.iloc[1, frame.columns.get_loc("Low")] = 100.0
+    frame.iloc[1, frame.columns.get_loc("High")] = 104.0
+    frame.iloc[2, frame.columns.get_loc("Low")] = 100.0
+    frame.iloc[2, frame.columns.get_loc("High")] = 104.0
+    frame.iloc[3, frame.columns.get_loc("Low")] = 102.0
+    frame.iloc[3, frame.columns.get_loc("High")] = 105.0
+    frame.iloc[4, frame.columns.get_loc("High")] = 106.0
+
+    fast = pd.Series([99.0, 101.0] + [101.0] * (n - 2), index=idx)
+    slow = pd.Series(98.0, index=idx)
+    ema50_high = pd.Series(100.0, index=idx)
+    ema50_low = pd.Series(95.0, index=idx)
+    return frame, fast, slow, ema50_high, ema50_low
+
+
+def test_buy_strategy_orders_touch_clearance_breakout_and_retracement():
+    frame, fast, slow, ema_high, ema_low = _pullback_frame()
+    frame.iloc[5, frame.columns.get_loc("Low")] = 104.0
+    frame.iloc[6, frame.columns.get_loc("Low")] = 103.7
+    out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
+
+    assert (out["signal"] == LONG).sum() == 1
+    assert out["signal"].iloc[6] == LONG
+    assert out["active_trigger"].iloc[6] == pytest.approx(103.8)
+    assert out["trigger_immediate"].eq(False).all()
+
+
+def test_hourly_no_trade_filter_blocks_the_buy_sequence():
+    frame, fast, slow, ema_high, ema_low = _pullback_frame()
+    frame["hourly_regime"] = "no_trade"
+    out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
+    assert not out["signal"].any()
+
+
+def test_retracement_expires_after_five_upcoming_bars():
+    frame, fast, slow, ema_high, ema_low = _pullback_frame()
+    frame.loc[frame.index[5:], "Low"] = 104.0
+    out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
+
+    # Setup is formed at bar 4; bars 5 through 9 are its five opportunities.
+    assert (out["active_dir"].iloc[5:10] == LONG).all()
+    assert out["active_dir"].iloc[10] == 0
+    assert not out["signal"].any()
 
 
 # ------------------------------------------------------------------ setups ---

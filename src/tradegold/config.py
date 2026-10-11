@@ -83,7 +83,7 @@ class DataConfig(_Base):
 
 
 class StrategyConfig(_Base):
-    """Parameters of the GOLD STRATEGY setup rules."""
+    """Parameters of the multi-timeframe EMA pullback strategy."""
 
     ema_fast: int = Field(10, ge=1)     # Pine: emaCLen1
     ema_slow: int = Field(20, ge=1)     # Pine: emaCLen2
@@ -99,6 +99,10 @@ class StrategyConfig(_Base):
     # high - 0.60*range (= low + 0.40*range). The asymmetry is in the original.
     long_retracement: float = Field(0.40, gt=0, lt=1)
     short_retracement: float = Field(0.60, gt=0, lt=1)
+
+    # A cleared 5-minute EMA10 candle is the range anchor. After its high is
+    # broken, the 40% retracement must be touched within this many bars.
+    retracement_expiry_bars: int = Field(5, ge=4, le=5)
 
     # Pine: not (three preceding context candles all closed the same direction).
     require_pullback: bool = True

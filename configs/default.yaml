@@ -1,7 +1,7 @@
-# GOLD STRATEGY -- volume-expansion setups with a retracement entry.
+# GOLD STRATEGY -- hourly EMA filter with a 5-minute EMA pullback BUY entry.
 #
-# Setups are defined on completed 60-minute candles; entries trigger on 5-minute
-# bars when price pulls back into the setup's retracement level.
+# A completed 60-minute EMA10/EMA50-high filter gates the 5-minute EMA10/EMA20
+# touch, clearance, breakout, and 40% retracement sequence.
 #
 # Override anything without editing this file:
 #   tradegold run --set strategy.volume_multiplier=3.0
@@ -34,6 +34,7 @@ strategy:
   # Set to 3.0 for the volMA90 gate the source comment describes.
   volume_multiplier: 1.5
   long_retracement: 0.40      # fill at high - 0.40 * range
+  retracement_expiry_bars: 5  # cancel if not tapped within the next five 5m bars
   short_retracement: 0.60     # fill at high - 0.60 * range (= low + 0.40 * range)
   require_pullback: true      # skip when the prior 3 candles already ran one way
   setup_expiry_bars: 0        # 0 = a setup waits indefinitely, as in the original
