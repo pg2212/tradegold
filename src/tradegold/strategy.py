@@ -1,21 +1,27 @@
 """Hourly EMA-band filter and 5-minute EMA pullback BUY strategy.
 
 The lower-timeframe sequence is causal: EMA10 crosses above EMA50-high while
-EMA10 is above EMA20; a later candle touches EMA10; another candle clears it
-with its low above EMA10; price breaks that candle's high; and the following
-five candles may fill the 40%-from-high retracement. The old setup detector is
-retained as a diagnostic helper, but is no longer used to generate trades.
+EMA10 is above EMA20; a later candle touches EMA10; another candle closes above
+EMA10 with volume above the EMA-touch candle; price breaks that candle's high;
+and the following five candles may fill the 40%-from-high retracement. The old
+setup detector is retained as a diagnostic helper, but no longer generates trades.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+if __package__ in (None, ""):
+    raise SystemExit(
+        "Do not run strategy.py directly. From the project root, run "
+        "`python -m tradegold.cli run -c configs/default.yaml`."
+    )
+
 import numpy as np
 import pandas as pd
 
-from .config import StrategyConfig
-from .logging_utils import get_logger
+from .config import StrategyConfig  # noqa: E402
+from .logging_utils import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -24,7 +30,7 @@ LONG, SHORT, FLAT = 1, -1, 0
 CONTEXT_COLUMNS = [
     "openC", "highC", "lowC", "closeC", "volumeC", "efficiency", "atr_pctile",
     "ema_fast", "ema_slow", "ema_trend", "vol_ma", "vol_threshold",
-    "ema50_high", "ema50_low", "hourly_regime",
+    "yellow_volume", "ema50_high", "ema50_low", "hourly_regime",
     "prev_close_1", "bull_1", "bull_2", "bull_3",
     "bull_setup", "bear_setup",
     "setup_high", "setup_low", "setup_trigger", "setup_dir",
@@ -102,8 +108,13 @@ def build_context(bars: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
         cfg.atr_percentile_window, min_periods=cfg.atr_percentile_window // 5
     ).rank(pct=True)
 
-    out["vol_ma"] = volume.rolling(cfg.volume_ma_period, min_periods=cfg.volume_ma_period).mean()
+    # Exclude the current candle: the yellow-volume test compares this candle
+    # against the average of the *previous* 30 completed hourly candles.
+    out["vol_ma"] = volume.shift(1).rolling(
+        cfg.volume_ma_period, min_periods=cfg.volume_ma_period
+    ).mean()
     out["vol_threshold"] = out["vol_ma"] * cfg.volume_multiplier
+    out["yellow_volume"] = volume > out["vol_threshold"]
 
     # Pine's closeC2 -- the candle immediately before the setup candle. It
     # widens the setup range when it closed beyond the setup candle's extreme.
@@ -349,8 +360,9 @@ def run_strategy(
 
     Hourly EMA10 must be above the EMA50-high channel and EMA20. On the entry
     timeframe, EMA10 must cross above EMA50-high while above EMA20; price then
-    has to touch EMA10, clear it with a candle whose low is above EMA10, break
-    that candle's high, and retrace 40% of its range within five bars.
+    has to touch EMA10, then close above EMA10 on a candle with greater volume
+    than the touch candle, break that candle's high, and retrace 40% of its
+    range within five bars.
     """
     from .data import align_context
 
@@ -396,7 +408,8 @@ def _buy_signal_state_machine(
     local_up = (fast > slow) & (fast >= ema50_high)
     cross_up = (fast > ema50_high) & (fast.shift(1) <= ema50_high.shift(1))
     hourly_up = out["hourly_regime"].eq("buy")
-    eligible = hourly_up & local_up & cfg.allow_long
+    yellow_volume = out["yellow_volume"].fillna(False)
+    eligible = hourly_up & yellow_volume & local_up & cfg.allow_long
 
     n = len(out)
     signal = np.zeros(n, dtype=int)
@@ -413,10 +426,12 @@ def _buy_signal_state_machine(
     cross_values = cross_up.fillna(False).to_numpy(bool)
 
     # Stages: 0 wait for EMA10/EMA50-high cross; 1 wait for candle/EMA10 touch;
-    # 2 wait for a full clearance candle; 3 wait for its high to break;
+    # 2 wait for a close above EMA10 on higher volume than the touch candle;
+    # 3 wait for the clearance candle's high to break;
     # 4 wait for the 40% pullback (maximum five future candles).
     stage = 0
     touched_at = -1
+    touch_candle = -1
     clearance_high = clearance_low = trigger = np.nan
     pending_age = 0
 
@@ -434,10 +449,14 @@ def _buy_signal_state_machine(
         if stage == 1:
             if i > touched_at and low[i] <= ema10[i] <= high[i]:
                 stage = 2
+                touch_candle = i
             continue
 
         if stage == 2:
-            if low[i] > ema10[i]:
+            if (
+                out["Close"].iloc[i] > ema10[i]
+                and out["Volume"].iloc[i] > out["Volume"].iloc[touch_candle]
+            ):
                 clearance_high, clearance_low = high[i], low[i]
                 stage = 3
             continue

@@ -127,11 +127,14 @@ def test_level_segments_are_broken_between_setups(fake_run):
 def test_context_chart_marks_setups_and_the_volume_gate(fake_run):
     _, d = fake_run
     _, context, *_ = load_run(str(d))
+    context["yellow_volume"] = [True] + [False] * (len(context) - 1)
     fig = context_chart(context, dark=True)
     names = [str(t.name) for t in fig.data]
     assert any("Bullish setup" in n for n in names)
     assert any("Bearish setup" in n for n in names)
     assert "Setup threshold" in names and "Volume average" in names
+    volume = next(trace for trace in fig.data if trace.name.startswith("Volume (yellow"))
+    assert volume.marker.color[0] == "#f0c84b"
 
 
 def test_export_figure_normalises_every_timestamp(fake_run, tmp_path):

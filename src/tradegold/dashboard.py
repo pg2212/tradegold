@@ -344,10 +344,15 @@ def context_chart(view: pd.DataFrame, dark: bool) -> go.Figure:
         )
 
     is_setup = view["bull_setup"] | view["bear_setup"]
+    yellow_volume = (view["yellow_volume"] if "yellow_volume" in view
+                     else pd.Series(False, index=view.index))
     fig.add_trace(
         go.Bar(x=view.index, y=view["volumeC"],
-               marker_color=np.where(is_setup, EMA_SLOW, "rgba(130,130,130,.55)"),
-               name="Volume", showlegend=False,
+               marker_color=np.select(
+                   [yellow_volume, is_setup], ["#f0c84b", EMA_SLOW],
+                   default="rgba(130,130,130,.55)",
+               ),
+               name="Volume (yellow = >1.5× prior average)", showlegend=False,
                hovertemplate="vol %{y:,.0f}<extra></extra>"),
         row=2, col=1,
     )

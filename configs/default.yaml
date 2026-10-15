@@ -30,8 +30,7 @@ strategy:
   ema_slow: 20                # Pine emaCLen2
   ema_trend: 50               # Pine emaCLen3
   volume_ma_period: 30
-  # Pine tests volumeC > volMA45, where volMA45 = SMA(volume,30) * 1.5.
-  # Set to 3.0 for the volMA90 gate the source comment describes.
+  # Highlight hourly volume yellow when it exceeds the prior 30-hour average * 1.5.
   volume_multiplier: 1.5
   long_retracement: 0.40      # fill at high - 0.40 * range
   retracement_expiry_bars: 5  # cancel if not tapped within the next five 5m bars

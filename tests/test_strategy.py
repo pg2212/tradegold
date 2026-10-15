@@ -52,6 +52,17 @@ def test_volume_threshold_is_the_average_times_the_multiplier():
     assert ctx["vol_threshold"].dropna().iloc[-1] == pytest.approx(150.0)
 
 
+def test_yellow_volume_uses_only_the_previous_volume_candles():
+    rows = rising_market(7, volume=100.0)
+    rows[-1] = (*rows[-1][:4], 151.0)
+    out = build_context(bars(rows), cfg(volume_ma_period=5, volume_multiplier=1.5))
+
+    assert out["vol_ma"].iloc[-1] == pytest.approx(100.0)
+    assert out["vol_threshold"].iloc[-1] == pytest.approx(150.0)
+    assert bool(out["yellow_volume"].iloc[-1])
+    assert not out["yellow_volume"].iloc[:5].any()
+
+
 def test_prev_close_1_is_the_candle_before_the_setup_candle():
     ctx = build_context(bars(rising_market(10)), cfg())
     closes = bars(rising_market(10))["Close"]
@@ -80,7 +91,7 @@ def _pullback_frame(n: int = 12):
     frame = pd.DataFrame(
         {
             "Open": 102.0, "High": 104.0, "Low": 102.0, "Close": 103.0,
-            "Volume": 1.0, "hourly_regime": "buy",
+            "Volume": 1.0, "hourly_regime": "buy", "yellow_volume": True,
             "context_open_time": pd.Timestamp("2026-01-01", tz="UTC"),
         },
         index=idx,
@@ -93,8 +104,10 @@ def _pullback_frame(n: int = 12):
     frame.iloc[1, frame.columns.get_loc("High")] = 104.0
     frame.iloc[2, frame.columns.get_loc("Low")] = 100.0
     frame.iloc[2, frame.columns.get_loc("High")] = 104.0
+    frame.iloc[2, frame.columns.get_loc("Volume")] = 10.0
     frame.iloc[3, frame.columns.get_loc("Low")] = 102.0
     frame.iloc[3, frame.columns.get_loc("High")] = 105.0
+    frame.iloc[3, frame.columns.get_loc("Volume")] = 11.0
     frame.iloc[4, frame.columns.get_loc("High")] = 106.0
 
     fast = pd.Series([99.0, 101.0] + [101.0] * (n - 2), index=idx)
@@ -116,9 +129,36 @@ def test_buy_strategy_orders_touch_clearance_breakout_and_retracement():
     assert out["trigger_immediate"].eq(False).all()
 
 
+def test_clearance_requires_volume_higher_than_the_ema_touch_candle():
+    frame, fast, slow, ema_high, ema_low = _pullback_frame()
+    frame.iloc[3, frame.columns.get_loc("Volume")] = 10.0
+    frame.iloc[5, frame.columns.get_loc("Low")] = 104.0
+    frame.iloc[6, frame.columns.get_loc("Low")] = 103.7
+    out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
+
+    assert not out["signal"].any()
+
+
+def test_clearance_requires_close_above_ema10():
+    frame, fast, slow, ema_high, ema_low = _pullback_frame()
+    frame.iloc[3, frame.columns.get_loc("Close")] = 100.0
+    frame.iloc[5, frame.columns.get_loc("Low")] = 104.0
+    frame.iloc[6, frame.columns.get_loc("Low")] = 103.7
+    out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
+
+    assert not out["signal"].any()
+
+
 def test_hourly_no_trade_filter_blocks_the_buy_sequence():
     frame, fast, slow, ema_high, ema_low = _pullback_frame()
     frame["hourly_regime"] = "no_trade"
+    out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
+    assert not out["signal"].any()
+
+
+def test_hourly_volume_must_be_yellow_to_allow_a_buy():
+    frame, fast, slow, ema_high, ema_low = _pullback_frame()
+    frame["yellow_volume"] = False
     out = _buy_signal_state_machine(frame, cfg(), fast, slow, ema_high, ema_low)
     assert not out["signal"].any()
 

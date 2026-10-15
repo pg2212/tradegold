@@ -90,8 +90,7 @@ class StrategyConfig(_Base):
     ema_trend: int = Field(50, ge=1)    # Pine: emaCLen3
 
     volume_ma_period: int = Field(30, ge=2)
-    # Pine computes volMA45 = SMA(volume,30) * 1.5 and tests `volumeC > volMA45`.
-    # (The source comment says volMA90; the code uses volMA45. Code wins.)
+    # Hourly yellow-volume gate: current volume > mean(previous N volumes) * multiplier.
     volume_multiplier: float = Field(1.5, gt=0)
 
     # Retracement into the setup candle's range, as a fraction measured down
